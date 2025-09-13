@@ -119,13 +119,13 @@ jobs:
           cd 3rdparty/tvm
           git fetch --tags origin || true
           if ! git tag -l | grep -q .; then
-            git tag v0.22.0-ci
+            git tag v0.22.0
           fi
           cd ../..
 
       - name: Set TVM Version (Fallback)
         run: |
-          echo "TVM_VERSION=0.22.0-ci" >> $GITHUB_ENV
+          echo "TVM_VERSION=0.22.0" >> $GITHUB_ENV
 
       - name: Determine Version
         id: determine_version
@@ -214,7 +214,7 @@ jobs:
           df -h /
 
           # pip install --no-cache-dir --upgrade pip
-          pip install --no-cache-dir typing-extensions==4.12.2 cmake==3.28 build setuptools==75.8.0 ninja packaging wheel 
+          pip install --no-cache-dir typing-extensions==4.12.2 cmake==3.28 Cython build setuptools==75.8.0 ninja packaging wheel 
 
           # 根据 PyTorch 版本选择 CUDA 构建版本
           TORCH_CUDA_VERSION=$(python -c "
@@ -235,6 +235,8 @@ jobs:
           pip install --no-cache-dir numpy==1.26.3 \
             torch==${{ matrix.torch_ver }}+cu$TORCH_CUDA_VERSION \
             --index-url https://download.pytorch.org/whl/cu$TORCH_CUDA_VERSION 
+
+          pip install --no-cache-dir -r requirements-build.txt
 
           python -c "
           import torch
