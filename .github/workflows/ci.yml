@@ -104,10 +104,17 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4.1.7
+        uses: actions/checkout@v4.3.0
         with:
-          submodules: recursive
+          submodules: recursive 
           repository: ${{ inputs.repository }}
+          fetch-depth: 0 
+          fetch-tags: true 
+
+      - name: Verify Submodules
+        run: |
+          git submodule --init
+          git submodule update --recursive
 
       - name: Determine Version
         id: determine_version
