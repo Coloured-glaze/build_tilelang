@@ -163,7 +163,6 @@ jobs:
           echo "Torch Version (major.minor): ${{ env.MATRIX_TORCH_VERSION }}"
           echo "Wheel CUDA Version: ${{ env.WHEEL_CUDA_VERSION }}"
           echo "Python Version (numeric): ${{ env.MATRIX_PYTHON_VERSION }}"
-
           free -m
           df -h
 
@@ -180,7 +179,15 @@ jobs:
         with:
           cuda: ${{ matrix.cuda_ver }}
           method: network
-          sub-packages: '["nvcc"]'
+          sub-packages: '[
+                "nvcc",
+                "nvrtc",
+                "cudart",
+                "cublas",
+                "cusparse",
+                "curand",
+                "cusolver"
+                ]'
 
       - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
         run: |
