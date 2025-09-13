@@ -178,16 +178,9 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.27
         with:
           cuda: ${{ matrix.cuda_ver }}
-          method: network
-          sub-packages: '[
-                "nvcc",
-                "nvrtc",
-                "cudart",
-                "cublas",
-                "cusparse",
-                "curand",
-                "cusolver"
-                ]'
+          # local | network
+          method: local 
+          # sub-packages: '[ "nvcc" ]'
 
       - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
         run: |
