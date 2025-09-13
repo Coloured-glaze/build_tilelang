@@ -191,12 +191,12 @@ jobs:
 
       - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
         run: |
-          df -h
+          df -h /
           rm /home/runner/work/build_tilelang/build_tilelang/cuda_installer-linux-6.8.0-1031-azure-x64-12.8.1/cuda_installer-linux-6.8.0-1031-azure-x64_12.8.1.run || true
-          df -h
+          df -h /
 
           # pip install --no-cache-dir --upgrade pip
-          pip install --no-cache-dir typing-extensions==4.12.2 build 
+          pip install --no-cache-dir typing-extensions==4.12.2 build setuptools==75.8.0 ninja packaging wheel
 
           # 根据 PyTorch 版本选择 CUDA 构建版本
           TORCH_CUDA_VERSION=$(python -c "
@@ -238,7 +238,6 @@ jobs:
       - name: Build Wheel
         id: build_wheel
         run: |
-          pip install setuptools==75.8.0 ninja packaging wheel
 
           # 设置 CUDA 路径（如果安装了 CUDA）
           if [ -d "/usr/local/cuda" ]; then
@@ -246,7 +245,7 @@ jobs:
             export LD_LIBRARY_PATH="/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
           fi
 
-          MAX_JOBS=2 python -m build --wheel --outdir dist/
+          MAX_JOBS=2 bash ./install_cuda.sh
 
           # 获取构建产物路径
           WHEEL_PATH=$(find dist/ -name "*.whl" | head -n1)
