@@ -113,7 +113,7 @@ jobs:
 
       - name: Verify Submodules
         run: |
-          git submodule --init
+          git submodule init
           git submodule update --recursive
 
       - name: Determine Version
