@@ -191,8 +191,12 @@ jobs:
 
       - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
         run: |
-          pip install --upgrade pip
-          pip install typing-extensions==4.12.2 build 
+          df -h
+          rm /home/runner/work/build_tilelang/build_tilelang/cuda_installer-linux-6.8.0-1031-azure-x64-12.8.1/cuda_installer-linux-6.8.0-1031-azure-x64_12.8.1.run || true
+          df -h
+
+          # pip install --no-cache-dir --upgrade pip
+          pip install --no-cache-dir typing-extensions==4.12.2 build 
 
           # 根据 PyTorch 版本选择 CUDA 构建版本
           TORCH_CUDA_VERSION=$(python -c "
