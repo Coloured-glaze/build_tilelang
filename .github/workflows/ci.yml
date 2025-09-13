@@ -1,0 +1,265 @@
+name: Manual Build Wheel Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '自定义版本：若为 commit、tag、version 则自动获取'
+        default: 'commit'
+        required: true
+        type: string
+      python_version:
+        description: 'Python version (支持多值，用分号分隔)'
+        default: '3.12'
+        required: true
+        type: string
+      torch_version:
+        description: 'PyTorch version (支持多值，用分号分隔)'
+        default: '2.8.0'
+        required: true
+        type: string
+      cuda_version:
+        description: 'CUDA version (支持多值，用分号分隔)'
+        default: '12.8.1'
+        required: true
+        type: string
+      os_version:
+        description: 'OS version: ubuntu-latest, ubuntu-24.04, ubuntu-22.04'
+        default: 'ubuntu-22.04'
+        required: true
+        type: string
+      upload_artifact:
+        description: 'Upload artifact: 0 or 1'
+        default: '1'
+        required: true
+        type: string
+      release:
+        description: 'Create release: 0 or 1'
+        default: '0'
+        required: true
+        type: string
+      addl_info:
+        description: 'Additional information (附加标识)'
+        default: ''
+        required: false
+        type: string
+      repository:
+        description: 'Optional: Repository to checkout (e.g. tile-ai/tilelang). Uses current repo if not provided.'
+        required: false
+        type: string
+        default: 'tile-ai/tilelang'
+
+permissions:
+  contents: write
+
+jobs:
+  set_matrix:
+    name: Generate Build Matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set Matrix
+        id: set-matrix
+        run: |
+          import os
+          import json
+
+          # 从环境变量读取输入，支持多值（分号分隔）
+          py_versions = os.getenv("PYTHON_VERSION", "").split(";")
+          torch_versions = os.getenv("TORCH_VERSION", "").split(";")
+          cuda_versions = os.getenv("CUDA_VERSION", "").split(";")
+
+          # 构建矩阵
+          include = []
+          for py in py_versions:
+            for th in torch_versions:
+              for cu in cuda_versions:
+                include.append({
+                  "python_ver": py.strip(),
+                  "torch_ver": th.strip(),
+                  "cuda_ver": cu.strip(),
+                  "swap_size": "10"  # 固定 swap 大小，可根据需要扩展
+                })
+
+          matrix = {
+            "include": include
+          }
+
+          # 输出到 GitHub Actions
+          with open(os.getenv('GITHUB_OUTPUT'), 'a') as f:
+            f.write(f"matrix={json.dumps(matrix)}\n")
+
+          print("Generated matrix:", matrix)
+        shell: python
+
+        env:
+          PYTHON_VERSION: ${{ inputs.python_version }}
+          TORCH_VERSION: ${{ inputs.torch_version }}
+          CUDA_VERSION: ${{ inputs.cuda_version }}
+
+  build_wheel:
+    name: ${{ matrix.os_version }}-py${{ matrix.python_ver }}-th${{ matrix.torch_ver }}-cu${{ matrix.cuda_ver }}
+    needs: set_matrix
+    runs-on: ${{ inputs.os_version }}
+    strategy:
+      matrix: ${{ fromJSON(needs.set_matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4.1.7
+        with:
+          submodules: recursive
+          repository: ${{ inputs.repository }}
+
+      - name: Determine Version
+        id: determine_version
+        run: |
+          INPUT_VERSION="${{ inputs.version }}"
+          case "$INPUT_VERSION" in
+            commit)
+              version="$(git rev-parse --short HEAD)"
+              ;;
+            tag)
+              version="git-$(git describe --tags --abbrev=0)"
+              ;;
+            version)
+              if [ -f VERSION ]; then
+                version=$(cat VERSION)
+              else
+                version="$INPUT_VERSION"
+              fi
+              ;;
+            *)
+              version="$INPUT_VERSION"
+              ;;
+          esac
+          echo "d_ver=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python ${{ matrix.python_ver }}
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: ${{ matrix.python_ver }}
+
+      - name: Setup Swap Space (Linux only)
+        if: runner.os == 'Linux'
+        uses: pierotofy/set-swap-space@v1.0
+        with:
+          swap-size-gb: ${{ matrix.swap_size }}
+
+      - name: Set Environment Variables
+        run: |
+          MATRIX_CUDA_VERSION=$(echo '${{ matrix.cuda_ver }}' | awk -F. '{print $1$2}')
+          MATRIX_TORCH_VERSION=$(echo '${{ matrix.torch_ver }}' | awk -F. '{print $1"."$2}')
+          WHEEL_CUDA_VERSION=$(echo '${{ matrix.cuda_ver }}' | awk -F. '{print $1}')
+          MATRIX_PYTHON_VERSION=$(echo '${{ matrix.python_ver }}' | awk -F. '{print $1$2}')
+
+          echo "MATRIX_CUDA_VERSION=$MATRIX_CUDA_VERSION" >> $GITHUB_ENV
+          echo "MATRIX_TORCH_VERSION=$MATRIX_TORCH_VERSION" >> $GITHUB_ENV
+          echo "WHEEL_CUDA_VERSION=$WHEEL_CUDA_VERSION" >> $GITHUB_ENV
+          echo "MATRIX_PYTHON_VERSION=$MATRIX_PYTHON_VERSION" >> $GITHUB_ENV
+
+      - name: Print Build Info
+        run: |
+          echo "Build Tag: ${{ steps.determine_version.outputs.d_ver }}-py${{ matrix.python_ver }}-th${{ matrix.torch_ver }}-cu${{ matrix.cuda_ver }}-${{ inputs.os_version }}${{ inputs.addl_info }}"
+          echo "CUDA Version (matrix): ${{ env.MATRIX_CUDA_VERSION }}"
+          echo "Torch Version (major.minor): ${{ env.MATRIX_TORCH_VERSION }}"
+          echo "Wheel CUDA Version: ${{ env.WHEEL_CUDA_VERSION }}"
+          echo "Python Version (numeric): ${{ env.MATRIX_PYTHON_VERSION }}"
+          free -m
+          df -h
+
+      - name: Free Disk Space (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+
+      - name: Install CUDA ${{ matrix.cuda_ver }}
+        if: ${{ matrix.cuda_ver != 'cpu' }}
+        uses: Jimver/cuda-toolkit@v0.2.27
+        with:
+          cuda: ${{ matrix.cuda_ver }}
+          method: network
+          sub-packages: '["nvcc"]'
+
+      - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
+        run: |
+          pip install --upgrade pip
+          pip install typing-extensions==4.12.2
+
+          # 根据 PyTorch 版本选择 CUDA 构建版本
+          TORCH_CUDA_VERSION=$(python -c "
+          import os
+          ver = os.environ['MATRIX_TORCH_VERSION']
+          mapping = {
+              '2.4': '118' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '124',
+              '2.5': '118' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '124',
+              '2.6': '118' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '126',
+              '2.7': '118' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '128',
+              '2.8': '118' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '128',
+          }
+          print(mapping.get(ver, '121'))  # 默认 fallback
+          ")
+
+          echo "Installing PyTorch with CUDA $TORCH_CUDA_VERSION..."
+
+          pip install --no-cache-dir numpy==1.26.3 \
+            torch==${{ matrix.torch_ver }}+cu$TORCH_CUDA_VERSION \
+            --index-url https://download.pytorch.org/whl/cu$TORCH_CUDA_VERSION
+
+          gcc --version
+          nvcc --version || echo "nvcc not available (CPU build?)"
+          python --version
+          pip --version
+
+          python -c "
+          import torch
+          from torch.utils import cpp_extension
+          print('PyTorch:', torch.__version__)
+          print('CUDA available:', torch.cuda.is_available())
+          print('CUDA version:', torch.version.cuda)
+          print('CUDA_HOME:', cpp_extension.CUDA_HOME)
+          "
+
+      - name: Build Wheel
+        id: build_wheel
+        run: |
+          pip install setuptools==75.8.0 ninja packaging wheel
+
+          # 设置 CUDA 路径（如果安装了 CUDA）
+          if [ -d "/usr/local/cuda" ]; then
+            export PATH="/usr/local/cuda/bin:$PATH"
+            export LD_LIBRARY_PATH="/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
+          fi
+
+          MAX_JOBS=2 python -m build --wheel --outdir dist/
+
+          # 获取构建产物路径
+          WHEEL_PATH=$(find dist/ -name "*.whl" | head -n1)
+          if [ -z "$WHEEL_PATH" ]; then
+            echo "Error: No .whl file found in dist/"
+            exit 1
+          fi
+
+          echo "wheel_path=${{ github.workspace }}/$WHEEL_PATH" >> "$GITHUB_OUTPUT"
+          echo "wheel_name=$(basename $WHEEL_PATH)" >> "$GITHUB_OUTPUT"
+          ls -lh dist/
+
+      - name: Upload Artifact
+        if: ${{ inputs.upload_artifact == '1' }}
+        uses: actions/upload-artifact@v4.4.0
+        with:
+          name: ${{ steps.determine_version.outputs.d_ver }}-py${{ matrix.python_ver }}-th${{ matrix.torch_ver }}-cu${{ matrix.cuda_ver }}-${{ inputs.os_version }}${{ inputs.addl_info }}-${{ github.run_id }}
+          path: ${{ steps.build_wheel.outputs.wheel_path }}
+          retention-days: 30
+
+      - name: Create Release
+        if: ${{ inputs.release == '1' }}
+        uses: softprops/action-gh-release@v2.3.3
+        with:
+          tag_name: ${{ steps.determine_version.outputs.d_ver }}-py${{ matrix.python_ver }}-th${{ matrix.torch_ver }}-cu${{ matrix.cuda_ver }}-${{ inputs.os_version }}${{ inputs.addl_info }}
+          files: ${{ steps.build_wheel.outputs.wheel_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
