@@ -65,43 +65,40 @@ jobs:
           import os
           import json
 
-          # 从环境变量读取输入，支持多值（分号分隔）
           py_versions = os.getenv("PYTHON_VERSION", "").split(";")
           torch_versions = os.getenv("TORCH_VERSION", "").split(";")
           cuda_versions = os.getenv("CUDA_VERSION", "").split(";")
+          os_versions = os.getenv("OS_VERSION", "").split(";")
 
-          # 构建矩阵
           include = []
-          for py in py_versions:
-            for th in torch_versions:
-              for cu in cuda_versions:
-                include.append({
-                  "python_ver": py.strip(),
-                  "torch_ver": th.strip(),
-                  "cuda_ver": cu.strip(),
-                  "swap_size": "10"  # 固定 swap 大小，可根据需要扩展
-                })
+          for os_ver in os_versions:
+            for py in py_versions:
+              for th in torch_versions:
+                for cu in cuda_versions:
+                  include.append({
+                    "os_version": os_ver.strip(),
+                    "python_ver": py.strip(),
+                    "torch_ver": th.strip(),
+                    "cuda_ver": cu.strip(),
+                    "swap_size": "32"
+                  })
 
-          matrix = {
-            "include": include
-          }
-
-          # 输出到 GitHub Actions
+          matrix = { "include": include }
           with open(os.getenv('GITHUB_OUTPUT'), 'a') as f:
             f.write(f"matrix={json.dumps(matrix)}\n")
 
           print("Generated matrix:", matrix)
         shell: python
-
         env:
           PYTHON_VERSION: ${{ inputs.python_version }}
           TORCH_VERSION: ${{ inputs.torch_version }}
           CUDA_VERSION: ${{ inputs.cuda_version }}
+          OS_VERSION: ${{ inputs.os_version }}
 
   build_wheel:
     name: ${{ matrix.os_version }}-py${{ matrix.python_ver }}-th${{ matrix.torch_ver }}-cu${{ matrix.cuda_ver }}
     needs: set_matrix
-    runs-on: ${{ inputs.os_version }}
+    runs-on: ${{ matrix.os_version }}
     strategy:
       matrix: ${{ fromJSON(needs.set_matrix.outputs.matrix) }}
 
@@ -137,7 +134,7 @@ jobs:
           echo "d_ver=$version" >> "$GITHUB_OUTPUT"
 
       - name: Setup Python ${{ matrix.python_ver }}
-        uses: actions/setup-python@v5.6.0
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python_ver }}
 
@@ -166,6 +163,7 @@ jobs:
           echo "Torch Version (major.minor): ${{ env.MATRIX_TORCH_VERSION }}"
           echo "Wheel CUDA Version: ${{ env.WHEEL_CUDA_VERSION }}"
           echo "Python Version (numeric): ${{ env.MATRIX_PYTHON_VERSION }}"
+
           free -m
           df -h
 
@@ -207,12 +205,7 @@ jobs:
 
           pip install --no-cache-dir numpy==1.26.3 \
             torch==${{ matrix.torch_ver }}+cu$TORCH_CUDA_VERSION \
-            --index-url https://download.pytorch.org/whl/cu$TORCH_CUDA_VERSION
-
-          gcc --version
-          nvcc --version || echo "nvcc not available (CPU build?)"
-          python --version
-          pip --version
+            --index-url https://download.pytorch.org/whl/cu$TORCH_CUDA_VERSION 
 
           python -c "
           import torch
@@ -222,6 +215,14 @@ jobs:
           print('CUDA version:', torch.version.cuda)
           print('CUDA_HOME:', cpp_extension.CUDA_HOME)
           "
+
+      - name: Print Environment Info
+        run: |
+          gcc --version
+          cmake --version
+          nvcc --version || echo "nvcc not available (CPU build?)"
+          python --version
+          pip --version
 
       - name: Build Wheel
         id: build_wheel
