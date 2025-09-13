@@ -185,7 +185,7 @@ jobs:
       - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
         run: |
           pip install --upgrade pip
-          pip install typing-extensions==4.12.2
+          pip install typing-extensions==4.12.2 build 
 
           # 根据 PyTorch 版本选择 CUDA 构建版本
           TORCH_CUDA_VERSION=$(python -c "
