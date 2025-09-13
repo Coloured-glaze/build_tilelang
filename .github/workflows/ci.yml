@@ -80,7 +80,7 @@ jobs:
                     "python_ver": py.strip(),
                     "torch_ver": th.strip(),
                     "cuda_ver": cu.strip(),
-                    "swap_size": "32"
+                    "swap_size": "2"
                   })
 
           matrix = { "include": include }
@@ -169,9 +169,11 @@ jobs:
       - name: Free Disk Space (Linux only)
         if: runner.os == 'Linux'
         run: |
+          df -h
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          df -h
 
       - name: Install CUDA ${{ matrix.cuda_ver }}
         if: ${{ matrix.cuda_ver != 'cpu' }}
@@ -179,8 +181,13 @@ jobs:
         with:
           cuda: ${{ matrix.cuda_ver }}
           # local | network
-          method: local 
           # sub-packages: '[ "nvcc" ]'
+          sub-packages: '[]'
+          non-cuda-sub-packages: '[]'
+          method: local
+          linux-local-args: '["--toolkit", "--samples"]'
+          use-github-cache: true
+          use-local-cache: true
 
       - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
         run: |
