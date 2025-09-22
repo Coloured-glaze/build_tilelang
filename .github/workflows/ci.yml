@@ -209,7 +209,7 @@ jobs:
           sub-packages: '[]'
           non-cuda-sub-packages: '[]'
           method: local
-          linux-local-args: '["--toolkit", "--samples"]'
+          linux-local-args: '["--toolkit", "--silent", "--override"]'
           use-github-cache: true
           use-local-cache: true
 
