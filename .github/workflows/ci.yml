@@ -86,7 +86,7 @@ jobs:
                     "python_ver": py.strip(),
                     "torch_ver": th.strip(),
                     "cuda_ver": cu.strip(),
-                    "swap_size": "2"
+                    "swap_size": "1"
                   })
 
           matrix = { "include": include }
@@ -197,7 +197,68 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          echo "Free disk space after removing large packages:"
           df -h
+
+      - name: Get PATH Folder Sizes with Python
+        run: |
+          python -c "
+          import os
+          import subprocess
+          
+          # 获取 PATH 环境变量
+          path_dirs = os.environ.get('PATH', '').split(':')
+          
+          print('PATH directories and their sizes:')
+          print(path_dirs)
+          print('=' * 60)
+          
+          total_size = 0
+          for path_dir in path_dirs:
+              if os.path.exists(path_dir) and os.path.isdir(path_dir):
+                  try:
+                      # 使用 du 命令获取文件夹大小
+                      result = subprocess.run(['du', '-sh', path_dir], capture_output=True, text=True)
+                      if result.returncode == 0:
+                          size_info = result.stdout.strip().split('\t')[0]
+                          print(f'{size_info:>8}  {path_dir}')
+                          
+                          # 解析大小（转换为字节用于总计）
+                          if 'G' in size_info:
+                              size_bytes = float(size_info.replace('G', '')) * 1024 * 1024 * 1024
+                          elif 'M' in size_info:
+                              size_bytes = float(size_info.replace('M', '')) * 1024 * 1024
+                          elif 'K' in size_info:
+                              size_bytes = float(size_info.replace('K', '')) * 1024
+                          else:
+                              size_bytes = float(size_info)
+                          total_size += size_bytes
+                      else:
+                          print(f'Error getting size for: {path_dir}')
+                  except Exception as e:
+                      print(f'Error processing {path_dir}: {e}')
+              else:
+                  print(f'Missing or not a directory: {path_dir}')
+          
+          # 显示总计大小
+          print('=' * 60)
+          if total_size >= 1024 * 1024 * 1024:
+              total_gb = total_size / (1024 * 1024 * 1024)
+              print(f'Total PATH size: {total_gb:.2f} GB')
+          elif total_size >= 1024 * 1024:
+              total_mb = total_size / (1024 * 1024)
+              print(f'Total PATH size: {total_mb:.2f} MB')
+          elif total_size >= 1024:
+              total_kb = total_size / 1024
+              print(f'Total PATH size: {total_kb:.2f} KB')
+          else:
+              print(f'Total PATH size: {total_size:.0f} bytes')
+          
+          # 显示 PATH 中的目录数量
+          valid_dirs = [d for d in path_dirs if os.path.exists(d) and os.path.isdir(d)]
+          print(f'Number of valid PATH directories: {len(valid_dirs)}')
+          print(f'Total PATH entries: {len(path_dirs)}')
+          "
 
       - name: Install CUDA ${{ matrix.cuda_ver }}
         if: ${{ matrix.cuda_ver != 'cpu' }}
