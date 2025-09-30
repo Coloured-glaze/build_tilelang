@@ -177,17 +177,17 @@ jobs:
 
           # 根据 PyTorch 版本选择 CUDA 构建版本
           TORCH_CUDA_VERSION=$(python -c "
-          import os
-          ver = os.environ['MATRIX_TORCH_VERSION']
+          ver = '$MATRIX_TORCH_VERSION'
+          cuda_ver = int('$MATRIX_CUDA_VERSION')
           mapping = {
-              '2.1': '118' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '121',
-              '2.2': '121' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '121',
-              '2.3': '121' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '121',
-              '2.4': '124' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '124',
-              '2.5': '124' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '124',
-              '2.6': '126' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '126',
-              '2.7': '128' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '128',
-              '2.8': '128' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '128',
+              '2.1': '118' if cuda_ver < 120 else '121',
+              '2.2': '121' if cuda_ver < 120 else '121',
+              '2.3': '121' if cuda_ver < 120 else '121',
+              '2.4': '124' if cuda_ver < 120 else '124',
+              '2.5': '124' if cuda_ver < 120 else '124',
+              '2.6': '126' if cuda_ver < 120 else '126',
+              '2.7': '128' if cuda_ver < 120 else '128',
+              '2.8': '128' if cuda_ver < 120 else '128',
           }
           print(mapping.get(ver, '121'))  # 默认 fallback
           ")
