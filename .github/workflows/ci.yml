@@ -86,7 +86,7 @@ jobs:
                     "python_ver": py.strip(),
                     "torch_ver": th.strip(),
                     "cuda_ver": cu.strip(),
-                    "swap_size": "2"
+                    "swap_size": "1"
                   })
 
           matrix = { "include": include }
@@ -175,10 +175,28 @@ jobs:
           WHEEL_CUDA_VERSION=$(echo '${{ matrix.cuda_ver }}' | awk -F. '{print $1}')
           MATRIX_PYTHON_VERSION=$(echo '${{ matrix.python_ver }}' | awk -F. '{print $1$2}')
 
+          # 根据 PyTorch 版本选择 CUDA 构建版本
+          TORCH_CUDA_VERSION=$(python -c "
+          ver = '$MATRIX_TORCH_VERSION'
+          cuda_ver = int('$MATRIX_CUDA_VERSION')
+          mapping = {
+              '2.1': '118' if cuda_ver < 120 else '121',
+              '2.2': '121' if cuda_ver < 120 else '121',
+              '2.3': '121' if cuda_ver < 120 else '121',
+              '2.4': '124' if cuda_ver < 120 else '124',
+              '2.5': '124' if cuda_ver < 120 else '124',
+              '2.6': '126' if cuda_ver < 120 else '126',
+              '2.7': '128' if cuda_ver < 120 else '128',
+              '2.8': '128' if cuda_ver < 120 else '128',
+          }
+          print(mapping.get(ver, '121'))  # 默认 fallback
+          ")
+
           echo "MATRIX_CUDA_VERSION=$MATRIX_CUDA_VERSION" >> $GITHUB_ENV
           echo "MATRIX_TORCH_VERSION=$MATRIX_TORCH_VERSION" >> $GITHUB_ENV
           echo "WHEEL_CUDA_VERSION=$WHEEL_CUDA_VERSION" >> $GITHUB_ENV
           echo "MATRIX_PYTHON_VERSION=$MATRIX_PYTHON_VERSION" >> $GITHUB_ENV
+          echo "TORCH_CUDA_VERSION=$TORCH_CUDA_VERSION" >> $GITHUB_ENV
 
       - name: Print Build Info
         run: |
@@ -187,6 +205,7 @@ jobs:
           echo "Torch Version (major.minor): ${{ env.MATRIX_TORCH_VERSION }}"
           echo "Wheel CUDA Version: ${{ env.WHEEL_CUDA_VERSION }}"
           echo "Python Version (numeric): ${{ env.MATRIX_PYTHON_VERSION }}"
+          echo "Torch CUDA Version: ${{ env.TORCH_CUDA_VERSION }}"
           free -m
           df -h
 
@@ -197,94 +216,141 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          echo "Free disk space after removing large packages:"
           df -h
 
-      - name: Install CUDA ${{ matrix.cuda_ver }}
-        if: ${{ matrix.cuda_ver != 'cpu' }}
-        uses: Jimver/cuda-toolkit@v0.2.27
-        with:
-          cuda: ${{ matrix.cuda_ver }}
-          # local | network
-          # sub-packages: '[ "nvcc" ]'
-          sub-packages: '[]'
-          non-cuda-sub-packages: '[]'
-          method: local
-          linux-local-args: '["--toolkit", "--silent", "--override"]'
-          use-github-cache: true
-          use-local-cache: true
-
-      - name: Install PyTorch ${{ matrix.torch_ver }} + CUDA ${{ matrix.cuda_ver }}
+      - name: Get PATH Folder Sizes with Python
         run: |
-          df -h /
-          rm /home/runner/work/build_tilelang/build_tilelang/cuda_installer-linux-6.8.0-1031-azure-x64-12.8.1/cuda_installer-linux-6.8.0-1031-azure-x64_12.8.1.run || true
-          df -h /
-
-          # pip install --no-cache-dir --upgrade pip
-          pip install --no-cache-dir typing-extensions==4.12.2 cmake==3.28 Cython build setuptools==75.8.0 ninja packaging wheel 
-
-          # 根据 PyTorch 版本选择 CUDA 构建版本
-          TORCH_CUDA_VERSION=$(python -c "
-          import os
-          ver = os.environ['MATRIX_TORCH_VERSION']
-          mapping = {
-              '2.1': '118' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '121',
-              '2.2': '121' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '121',
-              '2.3': '121' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '121',
-              '2.4': '124' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '124',
-              '2.5': '124' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '124',
-              '2.6': '126' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '126',
-              '2.7': '128' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '128',
-              '2.8': '128' if int(os.environ['MATRIX_CUDA_VERSION']) < 120 else '128',
-          }
-          print(mapping.get(ver, '121'))  # 默认 fallback
-          ")
-
-          echo "Installing PyTorch with CUDA $TORCH_CUDA_VERSION..."
-
-          pip install --no-cache-dir numpy==1.26.3 \
-            torch==${{ matrix.torch_ver }}+cu$TORCH_CUDA_VERSION \
-            --index-url https://download.pytorch.org/whl/cu$TORCH_CUDA_VERSION 
-
-          pip install --no-cache-dir -r requirements-build.txt
-
           python -c "
-          import torch
-          from torch.utils import cpp_extension
-          print('PyTorch:', torch.__version__)
-          print('CUDA available:', torch.cuda.is_available())
-          print('CUDA version:', torch.version.cuda)
-          print('CUDA_HOME:', cpp_extension.CUDA_HOME)
+          import os
+          import subprocess
+          
+          # 获取 PATH 环境变量
+          path_dirs = os.environ.get('PATH', '').split(':')
+          
+          print('PATH directories and their sizes:')
+          print(path_dirs)
+          print('=' * 60)
+          
+          total_size = 0
+          for path_dir in path_dirs:
+              if os.path.exists(path_dir) and os.path.isdir(path_dir):
+                  try:
+                      # 使用 du 命令获取文件夹大小
+                      result = subprocess.run(['du', '-sh', path_dir], capture_output=True, text=True)
+                      if result.returncode == 0:
+                          size_info = result.stdout.strip().split('\t')[0]
+                          print(f'{size_info:>8}  {path_dir}')
+                          
+                          # 解析大小（转换为字节用于总计）
+                          if 'G' in size_info:
+                              size_bytes = float(size_info.replace('G', '')) * 1024 * 1024 * 1024
+                          elif 'M' in size_info:
+                              size_bytes = float(size_info.replace('M', '')) * 1024 * 1024
+                          elif 'K' in size_info:
+                              size_bytes = float(size_info.replace('K', '')) * 1024
+                          else:
+                              size_bytes = float(size_info)
+                          total_size += size_bytes
+                      else:
+                          print(f'Error getting size for: {path_dir}')
+                  except Exception as e:
+                      print(f'Error processing {path_dir}: {e}')
+              else:
+                  print(f'Missing or not a directory: {path_dir}')
+          
+          # 显示总计大小
+          print('=' * 60)
+          if total_size >= 1024 * 1024 * 1024:
+              total_gb = total_size / (1024 * 1024 * 1024)
+              print(f'Total PATH size: {total_gb:.2f} GB')
+          elif total_size >= 1024 * 1024:
+              total_mb = total_size / (1024 * 1024)
+              print(f'Total PATH size: {total_mb:.2f} MB')
+          elif total_size >= 1024:
+              total_kb = total_size / 1024
+              print(f'Total PATH size: {total_kb:.2f} KB')
+          else:
+              print(f'Total PATH size: {total_size:.0f} bytes')
+          
+          # 显示 PATH 中的目录数量
+          valid_dirs = [d for d in path_dirs if os.path.exists(d) and os.path.isdir(d)]
+          print(f'Number of valid PATH directories: {len(valid_dirs)}')
+          print(f'Total PATH entries: {len(path_dirs)}')
           "
 
-      - name: Print Environment Info
+      - name: Build Wheel with cibuildwheel
+        uses: pypa/cibuildwheel@v3.2.0
+        env:
+          CIBW_DEBUG_TRACEBACK: 1
+          CIBW_BUILD_VERBOSITY: 3
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_BUILD: "cp${{ env.MATRIX_PYTHON_VERSION }}-manylinux_x86_64"
+          CIBW_SKIP: "cp${{ env.MATRIX_PYTHON_VERSION }}-win* cp${{ env.MATRIX_PYTHON_VERSION }}-musl* cp${{ env.MATRIX_PYTHON_VERSION }}-macosx*"
+          CIBW_ENVIRONMENT_PASS_LINUX: "MATRIX_CUDA_VERSION MATRIX_TORCH_VERSION WHEEL_CUDA_VERSION MATRIX_PYTHON_VERSION TORCH_CUDA_VERSION"
+          CIBW_ENVIRONMENT: "MAX_JOBS=2"
+          CIBW_BUILD_FRONTEND: "pip"
+          CIBW_BEFORE_ALL: |
+            set -x
+            # Check environment variables
+            echo "========Checking environment variables========"
+            echo "MATRIX_CUDA_VERSION=${MATRIX_CUDA_VERSION}"
+            echo "MATRIX_TORCH_VERSION=${MATRIX_TORCH_VERSION}"
+            echo "WHEEL_CUDA_VERSION=${WHEEL_CUDA_VERSION}"
+            echo "MATRIX_PYTHON_VERSION=${MATRIX_PYTHON_VERSION}"
+            echo "TORCH_CUDA_VERSION=${TORCH_CUDA_VERSION}"
+            echo "MAX_JOBS=${MAX_JOBS}"
+            echo "========Checking environment variables========"
+            # Install CUDA toolkit
+            dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
+            dnf clean all
+            RETRIES=5
+            COUNT=0
+            # install full cuda-toolkit
+            until dnf -y install cuda-toolkit-${{ matrix.cuda_ver }}; do
+              if [[ $COUNT -ge $RETRIES ]]; then
+                echo "Failed after $RETRIES attempts, aborting."
+                exit 1
+              fi
+              COUNT=$((COUNT+1))
+              echo "Retrying CUDA installation($COUNT/$RETRIES)..."
+              sleep 10
+            done
+            ls -al /usr/local
+            export PATH=$PATH:/usr/local/cuda/bin
+            nvcc --version
+          CIBW_BEFORE_BUILD: |
+            # Install PyTorch ${{ matrix.torch_ver }}+cu${{ env.TORCH_CUDA_VERSION }}
+            pip install --upgrade pip
+
+            # With python 3.13 and torch 2.5.1, unless we update typing-extensions, we get error
+            pip install typing-extensions==4.12.2
+            
+            pip install --no-cache-dir torch==${{ matrix.torch_ver }} --index-url https://download.pytorch.org/whl/cu${TORCH_CUDA_VERSION}
+            
+            # Install build dependencies
+            pip install 'numpy<2.0'
+            pip install ninja packaging wheel setuptools==75.8.0 cmake==3.28 Cython build
+            
+            # Install project specific requirements
+            pip install --no-cache-dir -r requirements-build.txt
+            
+            export PATH=/usr/local/cuda/bin:/usr/local/cuda/lib64:/usr/local/nvidia/bin:/usr/local/nvidia/lib64:$PATH
+            export LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+            nvcc --version
+            python --version
+            python -c "import torch; print('PyTorch:', torch.__version__)"
+            python -c "import torch; print('CUDA:', torch.version.cuda)"
+            python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: |
+            auditwheel repair --exclude 'libcuda.so*' --exclude 'libtorch.so*' --exclude 'libc10.so*' --exclude 'libtorch_python.so*' --exclude 'libc10_cuda.so*' --exclude 'libtorch_cuda.so*' --exclude 'libtorch_cpu.so*' --exclude 'libcudart.so.*' -w {dest_dir} {wheel}
+        with:
+          output-dir: dist
+
+      - name: List built wheels and their sizes
+        if: ${{ always() }}
         run: |
-          gcc --version
-          cmake --version
-          nvcc --version || echo "nvcc not available (CPU build?)"
-          python --version
-          pip --version
-
-      - name: Build Wheel
-        id: build_wheel
-        run: |
-
-          # 设置 CUDA 路径（如果安装了 CUDA）
-          if [ -d "/usr/local/cuda" ]; then
-            export PATH="/usr/local/cuda/bin:$PATH"
-            export LD_LIBRARY_PATH="/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
-          fi
-
-          MAX_JOBS=2 python setup.py bdist_wheel 
-
-          # 获取构建产物路径
-          WHEEL_PATH=$(find dist/ -name "*.whl" | head -n1)
-          if [ -z "$WHEEL_PATH" ]; then
-            echo "Error: No .whl file found in dist/"
-            exit 1
-          fi
-
-          echo "wheel_path=${{ github.workspace }}/$WHEEL_PATH" >> "$GITHUB_OUTPUT"
-          echo "wheel_name=$(basename $WHEEL_PATH)" >> "$GITHUB_OUTPUT"
+          df -h 
           ls -lh dist/
 
       - name: Upload Artifact
@@ -292,7 +358,7 @@ jobs:
         uses: actions/upload-artifact@v4.4.0
         with:
           name: ${{ steps.determine_version.outputs.d_ver }}-py${{ matrix.python_ver }}-th${{ matrix.torch_ver }}-cu${{ matrix.cuda_ver }}-${{ inputs.os_version }}${{ inputs.addl_info }}-${{ github.run_id }}
-          path: ${{ steps.build_wheel.outputs.wheel_path }}
+          path: dist/*.whl
           retention-days: 30
 
       - name: Create Release
@@ -300,6 +366,6 @@ jobs:
         uses: softprops/action-gh-release@v2.3.3
         with:
           tag_name: ${{ steps.determine_version.outputs.d_ver }}-py${{ matrix.python_ver }}-th${{ matrix.torch_ver }}-cu${{ matrix.cuda_ver }}-${{ inputs.os_version }}${{ inputs.addl_info }}
-          files: ${{ steps.build_wheel.outputs.wheel_path }}
+          files: dist/*.whl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
