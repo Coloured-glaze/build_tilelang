@@ -280,7 +280,7 @@ jobs:
           "
 
       - name: Build Wheel with cibuildwheel
-        uses: pypa/cibuildwheel@v3.1.1
+        uses: pypa/cibuildwheel@v3.2.0
         env:
           CIBW_DEBUG_TRACEBACK: 1
           CIBW_BUILD_VERBOSITY: 3
@@ -347,9 +347,10 @@ jobs:
         with:
           output-dir: dist
 
-      - name: List built wheels
+      - name: List built wheels and their sizes
         if: ${{ always() }}
         run: |
+          df -h 
           ls -lh dist/
 
       - name: Upload Artifact
