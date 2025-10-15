@@ -346,6 +346,7 @@ jobs:
             auditwheel repair --exclude 'libcuda.so*' --exclude 'libtorch.so*' --exclude 'libc10.so*' --exclude 'libtorch_python.so*' --exclude 'libc10_cuda.so*' --exclude 'libtorch_cuda.so*' --exclude 'libtorch_cpu.so*' --exclude 'libcudart.so.*' -w {dest_dir} {wheel}
         with:
           output-dir: dist
+          config-file: "{package}/pyproject.toml"
 
       - name: List built wheels and their sizes
         if: ${{ always() }}
