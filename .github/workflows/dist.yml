@@ -12,6 +12,11 @@ on:
         default: '3.9'
         required: true
         type: string
+      torch_version:
+        description: 'PyTorch version (支持多值，用分号分隔)'
+        default: '2.8'
+        required: true
+        type: string
       cuda_version:
         description: 'CUDA version (支持多值，用分号分隔)'
         default: '12.8'
@@ -65,6 +70,7 @@ jobs:
           import json
 
           py_versions = os.getenv("PYTHON_VERSION", "").split(";")
+          torch_versions = os.getenv("TORCH_VERSION", "").split(";")
           cuda_versions = os.getenv("CUDA_VERSION", "").split(";")
           os_versions = os.getenv("OS_VERSION", "").split(";")
 
@@ -72,11 +78,13 @@ jobs:
           for os_ver in os_versions:
             for py in py_versions:
               for cu in cuda_versions:
-                include.append({
-                  "os_version": os_ver.strip(),
-                  "python_ver": py.strip(),
-                  "cuda_ver": cu.strip()
-                })
+                for th in torch_versions:
+                  include.append({
+                    "os_version": os_ver.strip(),
+                    "python_ver": py.strip(),
+                    "cuda_ver": cu.strip(),
+                    "torch": th.strip()
+                  })
 
           matrix = { "include": include }
           with open(os.getenv('GITHUB_OUTPUT'), 'a') as f:
@@ -86,6 +94,7 @@ jobs:
         shell: python
         env:
           PYTHON_VERSION: ${{ inputs.python_version }}
+          TORCH_VERSION: ${{ inputs.torch_version }}
           CUDA_VERSION: ${{ inputs.cuda_version }}
           OS_VERSION: ${{ inputs.os_version }}
 
@@ -99,6 +108,8 @@ jobs:
     runs-on: ${{ matrix.os_version }}
     env:
       NO_VERSION_LABEL: ${{ github.event_name == 'release' && 'OFF' || 'ON' }}
+    outputs:
+      d_ver: ${{ steps.determine_version.outputs.d_ver }}
 
     steps:
       - name: Checkout repository
@@ -146,8 +157,8 @@ jobs:
           echo "CUDA_VERSION=${CUDA_VERSION}" | tee -a "${GITHUB_ENV}"
           
           # Set TORCH_CUDA_VERSION based on PyTorch version
-            MATRIX_CUDA_VERSION=$(echo '${{ matrix.cuda }}' | awk -F. '{print $1$2}')
-            MATRIX_TORCH_VERSION=$(echo '${{ matrix.torch }}' | awk -F. '{print $1"."$2}')
+          MATRIX_CUDA_VERSION=$(echo '${{ matrix.cuda_ver }}' | awk -F. '{print $1$2}')
+          MATRIX_TORCH_VERSION=$(echo '${{ matrix.torch }}' | awk -F. '{print $1"."$2}')
           
           # 根据 PyTorch 版本选择 CUDA 构建版本
           TORCH_CUDA_VERSION=$(python -c "
@@ -209,7 +220,7 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           CIBW_BUILD: "cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-manylinux_x86_64"
           CIBW_SKIP: "cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-win* cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-musl* cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-macosx*"
-          CIBW_ENVIRONMENT_PASS_LINUX: "CUDA_VERSION"
+          CIBW_ENVIRONMENT_PASS_LINUX: "CUDA_VERSION TORCH_CUDA_VERSION"
           CIBW_ENVIRONMENT: "MAX_JOBS=2"
           CIBW_BUILD_FRONTEND: "pip"
           CIBW_BEFORE_ALL: |
@@ -289,13 +300,13 @@ jobs:
     name: List artifacts
     if: ${{ inputs.upload_artifact == '1' }}
     runs-on: ubuntu-latest
-    needs: [build-wheels]
+    needs: [set_matrix, build-wheels]
     timeout-minutes: 15
     steps:
       - name: Download built wheels
         uses: actions/download-artifact@v5
         with:
-          pattern: ${{ steps.determine_version.outputs.d_ver }}-*
+          pattern: ${{ needs.build-wheels.outputs.d_ver }}-*
           path: dist
           merge-multiple: true
 
