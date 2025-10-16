@@ -149,7 +149,7 @@ jobs:
         with:
           package-dir: .
           output-dir: wheelhouse
-          config-file: "{package}/pyproject.toml"
+          # config-file: "{package}/pyproject.toml"
         env:
           # Disable CUDA installation to avoid package availability issues
           CIBW_BEFORE_BUILD_LINUX: ""
