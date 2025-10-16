@@ -144,6 +144,35 @@ jobs:
 
           CUDA_VERSION="${{ matrix.cuda_ver }}"
           echo "CUDA_VERSION=${CUDA_VERSION}" | tee -a "${GITHUB_ENV}"
+          
+          # Set TORCH_CUDA_VERSION based on PyTorch version
+            MATRIX_CUDA_VERSION=$(echo '${{ matrix.cuda }}' | awk -F. '{print $1$2}')
+            MATRIX_TORCH_VERSION=$(echo '${{ matrix.torch }}' | awk -F. '{print $1"."$2}')
+          
+          # 根据 PyTorch 版本选择 CUDA 构建版本
+          TORCH_CUDA_VERSION=$(python -c "
+          ver = '$MATRIX_TORCH_VERSION'
+          cuda_ver = int('$MATRIX_CUDA_VERSION')
+          mapping = {
+              '2.1': '118' if cuda_ver < 120 else '121',
+              '2.2': '121' if cuda_ver < 120 else '121',
+              '2.3': '121' if cuda_ver < 120 else '121',
+              '2.4': '124' if cuda_ver < 120 else '124',
+              '2.5': '124' if cuda_ver < 120 else '124',
+              '2.6': '126' if cuda_ver < 120 else '126',
+              '2.7': '128' if cuda_ver < 120 else '128',
+              '2.8': '128' if cuda_ver < 120 else '128',
+              '2.9': '128' if cuda_ver < 120 else '128',
+          }
+          print(mapping.get(ver, '121'))  # 默认 fallback
+          ")
+          
+          echo "TORCH_CUDA_VERSION=$TORCH_CUDA_VERSION" | tee -a "${GITHUB_ENV}"
+          
+          # Print variables for debugging
+          echo "PYTHON_VERSION_MAJMIN_NODOT: ${PYTHON_VERSION_MAJMIN_NODOT}"
+          echo "CUDA_VERSION: ${CUDA_VERSION}"
+          echo "TORCH_CUDA_VERSION: $TORCH_CUDA_VERSION"
 
           # Remove CUDA installation code from pyproject.toml
           python -c "
@@ -185,16 +214,28 @@ jobs:
           CIBW_BUILD_FRONTEND: "pip"
           CIBW_BEFORE_ALL: |
             set -x
+            # Check environment variables
+            echo "========Checking environment variables========"
+            echo "PYTHON_VERSION_MAJMIN_NODOT=${PYTHON_VERSION_MAJMIN_NODOT}"
+            echo "CUDA_VERSION=${CUDA_VERSION}"
+            echo "========Checking environment variables========"
             # Install CUDA toolkit
             dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
             dnf clean all
             RETRIES=5
             COUNT=0
-            # install full cuda-toolkit
-            until dnf -y install cuda-toolkit-${{ matrix.cuda_ver }}; do
+            # Try to install the requested CUDA version, fallback to 12.4 if not available
+            until dnf -y install cuda-toolkit-${{ env.CUDA_VERSION }}; do
               if [[ $COUNT -ge $RETRIES ]]; then
-                echo "Failed after $RETRIES attempts, aborting."
-                exit 1
+                echo "Failed to install cuda-toolkit-${{ env.CUDA_VERSION }} after $RETRIES attempts, trying fallback to cuda-toolkit-12.4"
+                dnf -y install cuda-toolkit-12.4 || {
+                  echo "Failed to install cuda-toolkit-12.4, trying fallback to cuda-toolkit-12.1"
+                  dnf -y install cuda-toolkit-12.1 || {
+                    echo "Failed to install any CUDA toolkit, aborting."
+                    exit 1
+                  }
+                }
+                break
               fi
               COUNT=$((COUNT+1))
               echo "Retrying CUDA installation($COUNT/$RETRIES)..."
@@ -204,14 +245,28 @@ jobs:
             export PATH=$PATH:/usr/local/cuda/bin
             nvcc --version
           CIBW_BEFORE_BUILD: |
-            # Install build dependencies
+            # Install PyTorch ${{ env.TORCH_CUDA_VERSION }}
             pip install --upgrade pip
+
+            # With python 3.13 and torch 2.5.1, unless we update typing-extensions, we get error
+            pip install typing-extensions==4.12.2
+            
+            pip install --no-cache-dir torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cu${TORCH_CUDA_VERSION}
+            
+            # Install build dependencies
+            pip install 'numpy<2.0'
             pip install ninja packaging wheel setuptools==75.8.0 cmake==3.28 Cython build
+            
+            # Install project specific requirements
+            pip install --no-cache-dir -r requirements-build.txt
             
             export PATH=/usr/local/cuda/bin:/usr/local/cuda/lib64:/usr/local/nvidia/bin:/usr/local/nvidia/lib64:$PATH
             export LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
             nvcc --version
             python --version
+            python -c "import torch; print('PyTorch:', torch.__version__)"
+            python -c "import torch; print('CUDA:', torch.version.cuda)"
+            python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
 
       - name: Upload wheels
         if: ${{ inputs.upload_artifact == '1' }}
