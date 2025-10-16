@@ -151,10 +151,11 @@ jobs:
           output-dir: wheelhouse
           # config-file: "{package}/pyproject.toml"
         env:
-          # Disable CUDA installation to avoid package availability issues
-          CIBW_BEFORE_BUILD_LINUX: ""
-          CIBW_BEFORE_BUILD_MACOS: ""
-          CIBW_BEFORE_BUILD_WINDOWS: ""
+          # Delete pyproject.toml before building to avoid configuration issues
+          CIBW_BEFORE_BUILD_LINUX: |
+            pwd && rm -f pyproject.toml || true
+          # CIBW_BEFORE_BUILD_MACOS: rm -f pyproject.toml || true
+          # CIBW_BEFORE_BUILD_WINDOWS: del /f pyproject.toml || exit /b 0
           # Skip building for musl Linux to avoid compatibility issues
           CIBW_SKIP: "*-musllinux*"
           # Use manylinux images that already have CUDA
