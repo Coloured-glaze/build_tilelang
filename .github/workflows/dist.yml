@@ -168,12 +168,12 @@ jobs:
               '2.1': '118' if cuda_ver < 120 else '121',
               '2.2': '121' if cuda_ver < 120 else '121',
               '2.3': '121' if cuda_ver < 120 else '121',
-              '2.4': '124' if cuda_ver < 120 else '124',
-              '2.5': '124' if cuda_ver < 120 else '124',
-              '2.6': '126' if cuda_ver < 120 else '126',
-              '2.7': '128' if cuda_ver < 120 else '128',
-              '2.8': '128' if cuda_ver < 120 else '128',
-              '2.9': '128' if cuda_ver < 120 else '128',
+              '2.4': '124' if cuda_ver < 121 else '124',
+              '2.5': '124' if cuda_ver < 121 else '124',
+              '2.6': '126' if cuda_ver < 121 else '126',
+              '2.7': '128' if cuda_ver < 124 else '128',
+              '2.8': '128' if cuda_ver < 124 else '128',
+              '2.9': '128' if cuda_ver < 126 else '128',
           }
           print(mapping.get(ver, '121'))  # 默认 fallback
           ")
@@ -235,18 +235,11 @@ jobs:
             dnf clean all
             RETRIES=5
             COUNT=0
-            # Try to install the requested CUDA version, fallback to 12.4 if not available
+            # install full cuda-toolkit
             until dnf -y install cuda-toolkit-${{ env.CUDA_VERSION }}; do
               if [[ $COUNT -ge $RETRIES ]]; then
-                echo "Failed to install cuda-toolkit-${{ env.CUDA_VERSION }} after $RETRIES attempts, trying fallback to cuda-toolkit-12.4"
-                dnf -y install cuda-toolkit-12.4 || {
-                  echo "Failed to install cuda-toolkit-12.4, trying fallback to cuda-toolkit-12.1"
-                  dnf -y install cuda-toolkit-12.1 || {
-                    echo "Failed to install any CUDA toolkit, aborting."
-                    exit 1
-                  }
-                }
-                break
+                echo "Failed after $RETRIES attempts, aborting."
+                exit 1
               fi
               COUNT=$((COUNT+1))
               echo "Retrying CUDA installation($COUNT/$RETRIES)..."
@@ -278,6 +271,8 @@ jobs:
             python -c "import torch; print('PyTorch:', torch.__version__)"
             python -c "import torch; print('CUDA:', torch.version.cuda)"
             python -c "from torch.utils import cpp_extension; print (cpp_extension.CUDA_HOME)"
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: |
+            auditwheel repair --exclude 'libcuda.so*' --exclude 'libtorch.so*' --exclude 'libc10.so*' --exclude 'libtorch_python.so*' --exclude 'libc10_cuda.so*' --exclude 'libtorch_cuda.so*' --exclude 'libtorch_cpu.so*' --exclude 'libcudart.so.*' -w {dest_dir} {wheel}
 
       - name: Upload wheels
         if: ${{ inputs.upload_artifact == '1' }}
