@@ -143,6 +143,7 @@ jobs:
 
           CUDA_VERSION="${{ matrix.cuda_ver }}"
           echo "CUDA_VERSION=${CUDA_VERSION}" | tee -a "${GITHUB_ENV}"
+          pwd && ls && rm -f pyproject.toml || true
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2
@@ -151,11 +152,10 @@ jobs:
           output-dir: wheelhouse
           # config-file: "{package}/pyproject.toml"
         env:
-          # Delete pyproject.toml before building to avoid configuration issues
-          CIBW_BEFORE_BUILD_LINUX: |
-            pwd && rm -f pyproject.toml || true
-          # CIBW_BEFORE_BUILD_MACOS: rm -f pyproject.toml || true
-          # CIBW_BEFORE_BUILD_WINDOWS: del /f pyproject.toml || exit /b 0
+          # Disable CUDA installation to avoid package availability issues
+          CIBW_BEFORE_BUILD_LINUX: ""
+          CIBW_BEFORE_BUILD_MACOS: ""
+          CIBW_BEFORE_BUILD_WINDOWS: ""
           # Skip building for musl Linux to avoid compatibility issues
           CIBW_SKIP: "*-musllinux*"
           # Use manylinux images that already have CUDA
