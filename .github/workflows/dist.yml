@@ -140,29 +140,78 @@ jobs:
           PYTHON_VERSION_MAJMIN="$(echo "${PYTHON_VERSION}" | cut -d '.' -f-2)"
           PYTHON_VERSION_MAJMIN_NODOT="${PYTHON_VERSION_MAJMIN//./}"
           echo "CIBW_BUILD=cp${PYTHON_VERSION_MAJMIN_NODOT}-*" | tee -a "${GITHUB_ENV}"
+          echo "PYTHON_VERSION_MAJMIN_NODOT=${PYTHON_VERSION_MAJMIN_NODOT}" | tee -a "${GITHUB_ENV}"
 
           CUDA_VERSION="${{ matrix.cuda_ver }}"
           echo "CUDA_VERSION=${CUDA_VERSION}" | tee -a "${GITHUB_ENV}"
-          pwd && ls && rm -f pyproject.toml || true
+
+          # Remove CUDA installation code from pyproject.toml
+          python -c "
+          import re
+          import os
+          
+          # Read the pyproject.toml file
+          with open('pyproject.toml', 'r') as f:
+              content = f.read()
+          
+          # Remove the before-all section that installs CUDA
+          # This removes the multi-line string from line 150 to 168
+          pattern = r'before-all = \"\"\".*?\"\"\"'
+          modified_content = re.sub(pattern, 'before-all = \"\"\"\"\"\"', content, flags=re.DOTALL)
+          
+          # Write back to the file
+          with open('pyproject.toml', 'w') as f:
+              f.write(modified_content)
+          
+          print('Removed CUDA installation code from pyproject.toml')
+          "
+          echo "Contents of pyproject.toml after removal:"
+          cat pyproject.toml
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2
         with:
           package-dir: .
           output-dir: wheelhouse
-          # config-file: "{package}/pyproject.toml"
+          config-file: "{package}/pyproject.toml"
         env:
-          # Disable CUDA installation to avoid package availability issues
-          CIBW_BEFORE_BUILD_LINUX: ""
-          CIBW_BEFORE_BUILD_MACOS: ""
-          CIBW_BEFORE_BUILD_WINDOWS: ""
-          # Skip building for musl Linux to avoid compatibility issues
-          CIBW_SKIP: "*-musllinux*"
-          # Use manylinux images that already have CUDA
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux2014
-          # Only build for the specified Python version
-          CIBW_BUILD: ${{ env.CIBW_BUILD }}
+          CIBW_DEBUG_TRACEBACK: 1
+          CIBW_BUILD_VERBOSITY: 3
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_BUILD: "cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-manylinux_x86_64"
+          CIBW_SKIP: "cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-win* cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-musl* cp${{ env.PYTHON_VERSION_MAJMIN_NODOT }}-macosx*"
+          CIBW_ENVIRONMENT_PASS_LINUX: "CUDA_VERSION"
+          CIBW_ENVIRONMENT: "MAX_JOBS=2"
+          CIBW_BUILD_FRONTEND: "pip"
+          CIBW_BEFORE_ALL: |
+            set -x
+            # Install CUDA toolkit
+            dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
+            dnf clean all
+            RETRIES=5
+            COUNT=0
+            # install full cuda-toolkit
+            until dnf -y install cuda-toolkit-${{ matrix.cuda_ver }}; do
+              if [[ $COUNT -ge $RETRIES ]]; then
+                echo "Failed after $RETRIES attempts, aborting."
+                exit 1
+              fi
+              COUNT=$((COUNT+1))
+              echo "Retrying CUDA installation($COUNT/$RETRIES)..."
+              sleep 10
+            done
+            ls -al /usr/local
+            export PATH=$PATH:/usr/local/cuda/bin
+            nvcc --version
+          CIBW_BEFORE_BUILD: |
+            # Install build dependencies
+            pip install --upgrade pip
+            pip install ninja packaging wheel setuptools==75.8.0 cmake==3.28 Cython build
+            
+            export PATH=/usr/local/cuda/bin:/usr/local/cuda/lib64:/usr/local/nvidia/bin:/usr/local/nvidia/lib64:$PATH
+            export LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+            nvcc --version
+            python --version
 
       - name: Upload wheels
         if: ${{ inputs.upload_artifact == '1' }}
