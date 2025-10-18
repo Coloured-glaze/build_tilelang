@@ -9,7 +9,7 @@ on:
         type: string
       python_version:
         description: 'Python version (支持多值，用分号分隔)'
-        default: '3.9'
+        default: '3.10'
         required: true
         type: string
       torch_version:
@@ -113,7 +113,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.3.0
         with:
           fetch-depth: 1
           submodules: recursive
@@ -284,7 +284,7 @@ jobs:
           cat pyproject.toml
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2
+        uses: pypa/cibuildwheel@v3.2.0
         with:
           package-dir: .
           output-dir: wheelhouse
@@ -300,11 +300,15 @@ jobs:
           CIBW_BUILD_FRONTEND: "pip"
           CIBW_BEFORE_ALL: |
             set -x
+            df -h
             # Check CUDA version format (must be x.x.x)
             if ! echo "${CUDA_VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
               echo "Error: CUDA_VERSION must be in format x.x.x, got '${CUDA_VERSION}'"
               exit 1
             fi
+            
+            # Clear package manager cache
+            dnf clean all
             
             # Install CUDA toolkit
             dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
@@ -322,9 +326,14 @@ jobs:
               echo "Retrying CUDA installation($COUNT/$RETRIES)..."
               sleep 10
             done
+            
+            # Clean up downloaded packages to save disk space
+            dnf clean packages
+            
             ls -al /usr/local
             export PATH=$PATH:/usr/local/cuda/bin
             nvcc --version
+            df -h
           CIBW_BEFORE_BUILD: |
             # Install PyTorch ${{ env.TORCH_CUDA_VERSION }}
             pip install --upgrade pip
@@ -353,7 +362,7 @@ jobs:
 
       - name: Upload wheels
         if: ${{ inputs.upload_artifact == '1' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.0
         with:
           name: ${{ steps.determine_version.outputs.d_ver }}-py${{ matrix.python_ver }}-cu${{ matrix.cuda_ver }}-${{ matrix.os_version }}
           path: wheelhouse/*.whl
@@ -386,7 +395,7 @@ jobs:
         run: ls -lh dist/*
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.4.0
         with:
           name: artifacts
           path: dist/*
