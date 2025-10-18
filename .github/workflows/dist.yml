@@ -193,7 +193,8 @@ jobs:
               content = f.read()
 
           modified_content = content.replace('rhel7/x86_64/cuda-rhel7.repo', 'rhel8/x86_64/cuda-rhel8.repo')
-          modified_content = content.replace('developer.download.nvidia.cn', 'developer.download.nvidia.com')
+          
+          modified_content = modified_content.replace('developer.download.nvidia.cn', 'developer.download.nvidia.com')
           
           with open('pyproject.toml', 'w') as f:
               f.write(modified_content)
