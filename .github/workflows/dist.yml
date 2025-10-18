@@ -19,7 +19,7 @@ on:
         type: string
       cuda_version:
         description: 'CUDA version (支持多值，用分号分隔)'
-        default: '12.8'
+        default: '12.8.1'
         required: true
         type: string
       os_version:
@@ -225,13 +225,21 @@ jobs:
             echo "PYTHON_VERSION_MAJMIN_NODOT=${PYTHON_VERSION_MAJMIN_NODOT}"
             echo "CUDA_VERSION=${CUDA_VERSION}"
             echo "========Checking environment variables========"
+            
+            # Check CUDA version format (must be x.x.x)
+            if ! echo "${CUDA_VERSION}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "Error: CUDA_VERSION must be in format x.x.x, got '${CUDA_VERSION}'"
+              exit 1
+            fi
+            
             # Install CUDA toolkit
             dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo
             dnf clean all
             RETRIES=5
             COUNT=0
-            # install full cuda-toolkit
-            until dnf -y install cuda-toolkit-${{ env.CUDA_VERSION }}; do
+            # install specific version of cuda-toolkit
+            CUDA_PKG_VERSION=$(echo "${CUDA_VERSION}" | sed 's/\./-/g')
+            until dnf -y install cuda-toolkit-${CUDA_PKG_VERSION}; do
               if [[ $COUNT -ge $RETRIES ]]; then
                 echo "Failed after $RETRIES attempts, aborting."
                 exit 1
