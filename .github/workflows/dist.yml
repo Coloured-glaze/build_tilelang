@@ -237,8 +237,8 @@ jobs:
             dnf clean all
             RETRIES=5
             COUNT=0
-            # install specific version of cuda-toolkit
-            CUDA_PKG_VERSION=$(echo "${CUDA_VERSION}" | sed 's/\./-/g')
+            # install specific version of cuda-toolkit (using major.minor format)
+            CUDA_PKG_VERSION=$(echo "${CUDA_VERSION}" | cut -d. -f1,2 | sed 's/\./-/')
             until dnf -y install cuda-toolkit-${CUDA_PKG_VERSION}; do
               if [[ $COUNT -ge $RETRIES ]]; then
                 echo "Failed after $RETRIES attempts, aborting."
