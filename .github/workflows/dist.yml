@@ -185,27 +185,21 @@ jobs:
           echo "CUDA_VERSION: ${CUDA_VERSION}"
           echo "TORCH_CUDA_VERSION: $TORCH_CUDA_VERSION"
 
-          # Remove CUDA installation code from pyproject.toml
           python -c "
           import re
           import os
           
-          # Read the pyproject.toml file
           with open('pyproject.toml', 'r') as f:
               content = f.read()
+
+          modified_content = content.replace('rhel7/x86_64/cuda-rhel7.repo', 'rhel8/x86_64/cuda-rhel8.repo')
+          modified_content = content.replace('developer.download.nvidia.cn', 'developer.download.nvidia.com')
           
-          # Remove the before-all section that installs CUDA
-          # This removes the multi-line string from line 150 to 168
-          pattern = r'before-all = \"\"\".*?\"\"\"'
-          modified_content = re.sub(pattern, 'before-all = \"\"\"\"\"\"', content, flags=re.DOTALL)
-          
-          # Write back to the file
           with open('pyproject.toml', 'w') as f:
               f.write(modified_content)
           
-          print('Removed CUDA installation code from pyproject.toml')
           "
-          echo "Contents of pyproject.toml after removal:"
+          echo "Contents of pyproject.toml after replacement:"
           cat pyproject.toml
 
       - name: Build wheels
