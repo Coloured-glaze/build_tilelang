@@ -336,19 +336,18 @@ jobs:
             df -h
           CIBW_BEFORE_BUILD: |
             # Install PyTorch ${{ env.TORCH_CUDA_VERSION }}
+            ls 
             pip install --upgrade pip
+            pip install --no-cache-dir -r requirements-dev.txt
 
             # With python 3.13 and torch 2.5.1, unless we update typing-extensions, we get error
             pip install typing-extensions==4.12.2
-            
-            pip install --no-cache-dir torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cu${TORCH_CUDA_VERSION}
-            
+
             # Install build dependencies
             pip install 'numpy<2.0'
             pip install ninja packaging wheel setuptools==75.8.0 cmake==3.28 Cython build
             
-            # Install project specific requirements
-            pip install --no-cache-dir -r requirements-build.txt
+            pip install --no-cache-dir torch==${{ matrix.torch }} --index-url https://download.pytorch.org/whl/cu${TORCH_CUDA_VERSION}
             
             export PATH=/usr/local/cuda/bin:/usr/local/cuda/lib64:/usr/local/nvidia/bin:/usr/local/nvidia/lib64:$PATH
             export LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
