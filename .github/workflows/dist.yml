@@ -9,7 +9,7 @@ on:
         type: string
       python_version:
         description: 'Python version (支持多值，用分号分隔)'
-        default: '3.10'
+        default: '3.12'
         required: true
         type: string
       torch_version:
@@ -65,6 +65,7 @@ jobs:
     steps:
       - name: Set Matrix
         id: set-matrix
+        shell: python
         run: |
           import os
           import json
@@ -91,7 +92,6 @@ jobs:
             f.write(f"matrix={json.dumps(matrix)}\n")
 
           print("Generated matrix:", matrix)
-        shell: python
         env:
           PYTHON_VERSION: ${{ inputs.python_version }}
           TORCH_VERSION: ${{ inputs.torch_version }}
@@ -108,12 +108,13 @@ jobs:
     runs-on: ${{ matrix.os_version }}
     env:
       NO_VERSION_LABEL: ${{ github.event_name == 'release' && 'OFF' || 'ON' }}
+      NO_GIT_VERSION: "ON"
     outputs:
       d_ver: ${{ steps.determine_version.outputs.d_ver }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.3.0
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
           submodules: recursive
@@ -154,8 +155,8 @@ jobs:
           df -h
 
       - name: Get PATH Folder Sizes with Python
+        shell: python
         run: |
-          python -c "
           import os
           import subprocess
           
@@ -211,10 +212,7 @@ jobs:
           valid_dirs = [d for d in path_dirs if os.path.exists(d) and os.path.isdir(d)]
           print(f'Number of valid PATH directories: {len(valid_dirs)}')
           print(f'Total PATH entries: {len(path_dirs)}')
-          "
       
-      # NB: CIBW builds wheels in containers on Linux
-
       - name: Set CIBW_BUILD
         run: |
           PYTHON_VERSION="${{ matrix.python_ver }}"
@@ -268,17 +266,12 @@ jobs:
           python -c "
           import re
           import os
-          
           with open('pyproject.toml', 'r') as f:
               content = f.read()
-
           modified_content = content.replace('rhel7/x86_64/cuda-rhel7.repo', 'rhel8/x86_64/cuda-rhel8.repo')
-          
           modified_content = modified_content.replace('developer.download.nvidia.cn', 'developer.download.nvidia.com')
-          
           with open('pyproject.toml', 'w') as f:
               f.write(modified_content)
-          
           "
           echo "Contents of pyproject.toml after replacement:"
           cat pyproject.toml
