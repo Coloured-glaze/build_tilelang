@@ -77,6 +77,22 @@ jobs:
 
       - name: Set CIBW_BUILD
         run: |
+
+          python -c "
+          import re
+          import os
+          with open('tilelang-source/pyproject.toml', 'r') as f:
+              content = f.read()
+          modified_content = content.replace('rhel7/x86_64/cuda-rhel7.repo', 'rhel8/x86_64/cuda-rhel8.repo')
+          modified_content = modified_content.replace('developer.download.nvidia.cn', 'developer.download.nvidia.com')
+          with open('tilelang-source/pyproject.toml', 'w') as f:
+              f.write(modified_content)
+          "
+          echo "====================================================="
+          echo "Contents of pyproject.toml after replacement:"
+          cat tilelang-source/pyproject.toml
+          echo "====================================================="
+          
           PYTHON_VERSION="${{ matrix.python-version }}"
           PYTHON_VERSION_MAJMIN="$(echo "${PYTHON_VERSION}" | cut -d '.' -f-2)"
           PYTHON_VERSION_MAJMIN_NODOT="${PYTHON_VERSION_MAJMIN//./}"
