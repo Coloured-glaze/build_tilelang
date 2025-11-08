@@ -1,5 +1,4 @@
-
-name: Dist 2
+name: Build Wheels Only
 
 on:
   workflow_dispatch:
@@ -35,61 +34,6 @@ env:
   CLICOLOR_FORCE: "1"
 
 jobs:
-  build-sdist:
-    name: Build SDist
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      # `NO_VERSION_LABEL=ON` disables embedding the toolchain / git commit hash in version metadata.
-      # Otherwise, the version of the SDist has a git hash suffix (e.g., 0.1.0+gitabcdef12),
-      # but the package built from the SDist has no way to get the git hash (it is not a git repo),
-      # leading to inconsistent versions between SDist and built packages (+gitabcdef12 vs. +gitunknown).
-      NO_VERSION_LABEL: 'ON'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-          submodules: recursive
-          repository: ${{ inputs.repository }}
-
-      - name: Setup Python and uv with caching
-        id: setup-uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          python-version: "3.12"
-          activate-environment: true
-
-      - name: Build SDist
-        run: |
-          uv run --no-project --with=build -m -- build --sdist --outdir=dist
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1
-        with:
-          create-symlink: true
-          evict-old-files: "7d"
-          append-timestamp: false
-          key: sdist-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.cc') }}
-          restore-keys: |
-            sdist-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.cc') }}
-            sdist-${{ runner.os }}-${{ runner.arch }}
-            ${{ runner.os }}-${{ runner.arch }}
-      - name: Test SDist buildable
-        run: |
-          TEMP_DIR="$(mktemp -d -t tilelang-sdist-test)"
-          cp -r dist "${TEMP_DIR}/dist"
-          cd "${TEMP_DIR}"
-          uv pip install -v dist/*.tar.gz
-          python3 -c "import tilelang; print(tilelang.__version__)"
-      - name: Upload SDist
-        # Not PR to save artifact storage, as SDist is only needed for releases.
-        uses: actions/upload-artifact@v5
-        with:
-          name: sdist
-          path: dist/*.tar.gz
-          if-no-files-found: error
-
   build-wheels:
     name: Build wheels for Python ${{ matrix.python-version }} on ${{ matrix.target.runner }} with ${{ matrix.target.toolkit }}
     strategy:
@@ -112,8 +56,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          repository: ${{ inputs.repository }}
           fetch-depth: 1
           submodules: recursive
+          path: tilelang-source
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1
@@ -121,13 +67,14 @@ jobs:
           create-symlink: true
           evict-old-files: "7d"
           append-timestamp: false
-          key: wheel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}-${{ hashFiles('**/*.cc') }}
+          key: wheel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}-${{ hashFiles('tilelang-source/**/*.cc') }}
           restore-keys: |
-            wheel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}-${{ hashFiles('**/*.cc') }}
+            wheel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}-${{ hashFiles('tilelang-source/**/*.cc') }}
             wheel-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}
             wheel-${{ runner.os }}-${{ runner.arch }}
             ${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}
             ${{ runner.os }}-${{ runner.arch }}
+
       - name: Set CIBW_BUILD
         run: |
           PYTHON_VERSION="${{ matrix.python-version }}"
@@ -143,36 +90,29 @@ jobs:
             HOST_CCACHE_DIR="$(ccache --get-config cache_dir)"
             echo "CIBW_BEFORE_BUILD_LINUX=yum install -y ccache && ccache -o cache_dir=/host${HOST_CCACHE_DIR}" | tee -a "${GITHUB_ENV}"
           fi
+          # Set working directory for cibuildwheel
+          echo "CIBW_BUILD_FRONTEND=build" | tee -a "${GITHUB_ENV}"
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2
         with:
-          package-dir: .
+          package-dir: tilelang-source
           output-dir: wheelhouse
-          config-file: "{package}/pyproject.toml"
+          config-file: "tilelang-source/pyproject.toml"
 
       - name: Upload wheels
-        # Not PR to save artifact storage, as wheels are only needed for releases.
         uses: actions/upload-artifact@v5
         with:
           name: wheels-${{ matrix.python-version }}-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}
           path: wheelhouse/*.whl
           if-no-files-found: error
 
-  list-artifacts:
-    name: List artifacts
-    # Not PR to save artifact storage, as artifacts are only needed for releases.
+  list-wheels:
+    name: List wheel artifacts
     runs-on: ubuntu-latest
-    needs: [build-sdist, build-wheels]
+    needs: [build-wheels]
     timeout-minutes: 15
     steps:
-      - name: Download built SDist
-        uses: actions/download-artifact@v6
-        with:
-          # unpacks default artifact into dist/
-          # if `name: artifact` is omitted, the action will create extra parent dir
-          name: sdist
-          path: dist
-
       - name: Download built wheels
         uses: actions/download-artifact@v6
         with:
@@ -180,12 +120,12 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: List distributions
-        run: ls -lh dist/*
+      - name: List wheel distributions
+        run: ls -lh dist/*.whl
 
-      - name: Upload artifacts
+      - name: Upload wheel artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: artifacts
-          path: dist/*
+          name: wheel-artifacts
+          path: dist/*.whl
           if-no-files-found: error
