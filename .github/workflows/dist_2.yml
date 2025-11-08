@@ -129,7 +129,6 @@ jobs:
 
       - name: Set CIBW_BUILD
         run: |
-
           PYTHON_VERSION="${{ matrix.python-version }}"
           PYTHON_VERSION_MAJMIN="$(echo "${PYTHON_VERSION}" | cut -d '.' -f-2)"
           PYTHON_VERSION_MAJMIN_NODOT="${PYTHON_VERSION_MAJMIN//./}"
@@ -143,11 +142,8 @@ jobs:
           fi
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             HOST_CCACHE_DIR="$(ccache --get-config cache_dir)"
-            echo "CIBW_BEFORE_BUILD_LINUX=yum install -y ccache && ccache -o cache_dir=/host${HOST_CCACHE_DIR}" | tee -a "${GITHUB_ENV}"
-            # Add environment variable to skip broken packages during CUDA installation
-            echo "CIBW_BEFORE_BUILD_LINUX=${CIBW_BEFORE_BUILD_LINUX} && export CUDACXX=/usr/local/cuda/bin/nvcc" | tee -a "${GITHUB_ENV}"
-            # Skip nvidia-driver-cuda-libs installation to avoid GLIBC version conflicts
-            echo "CIBW_BEFORE_BUILD_LINUX=${CIBW_BEFORE_BUILD_LINUX} && echo 'Skipping nvidia-driver-cuda-libs installation to avoid GLIBC conflicts'" | tee -a "${GITHUB_ENV}"
+            # Build the complete CIBW_BEFORE_BUILD_LINUX command in one go to avoid syntax errors
+            echo "CIBW_BEFORE_BUILD_LINUX=yum install -y ccache && ccache -o cache_dir=/host${HOST_CCACHE_DIR} && export CUDACXX=/usr/local/cuda/bin/nvcc && echo 'Skipping nvidia-driver-cuda-libs installation to avoid GLIBC conflicts'" | tee -a "${GITHUB_ENV}"
           fi
           # Set working directory for cibuildwheel
           echo "CIBW_BUILD_FRONTEND=build" | tee -a "${GITHUB_ENV}"
