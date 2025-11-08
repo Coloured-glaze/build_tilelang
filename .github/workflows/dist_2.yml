@@ -75,30 +75,61 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-${{ matrix.target.toolkit }}
             ${{ runner.os }}-${{ runner.arch }}
 
-      - name: Set CIBW_BUILD
+      - name: Set pyproject
+        shell: python
         run: |
-
-          python -c "
           import re
           import os
           with open('tilelang-source/pyproject.toml', 'r') as f:
-              content = f.read()
+            content = f.read()
+          
+          # Replace rhel7 with rhel8
           modified_content = content.replace('rhel7/x86_64/cuda-rhel7.repo', 'rhel8/x86_64/cuda-rhel8.repo')
+          # Replace nvidia.cn with nvidia.com
           modified_content = modified_content.replace('developer.download.nvidia.cn', 'developer.download.nvidia.com')
-          # Modify the before-all command to use --skip-broken flag
-          modified_content = re.sub(
-              r'yum install -y \"cuda-minimal-build-\$\{v\}\" \"cuda-driver-devel-\$\{v\}\" \"cuda-nvrtc-devel-\$\{v}\"',
-              'yum install -y --skip-broken \"cuda-minimal-build-${v}\" \"cuda-driver-devel-${v}\" \"cuda-nvrtc-devel-${v}\" || true',
-              modified_content
-          )
+          
+          # Find and replace the entire before-all section
+          before_all_pattern = r'before-all = """\n(.*?)\n"""'
+          match = re.search(before_all_pattern, modified_content, re.DOTALL)
+          if match:
+            original_before_all = match.group(1)
+            print("Original before-all section:")
+            print(original_before_all)
+            
+            # Replace yum install command with skip-broken and remove nvidia-driver-cuda-libs
+            new_before_all = original_before_all.replace(
+              'yum install -y "cuda-minimal-build-${v}" "cuda-driver-devel-${v}" "cuda-nvrtc-devel-${v}"',
+              'yum install -y --skip-broken "cuda-minimal-build-${v}" "cuda-driver-devel-${v}" "cuda-nvrtc-devel-${v}" || true'
+            )
+            
+            # Also handle case where nvidia-driver-cuda-libs is included
+            new_before_all = new_before_all.replace(
+              'yum install -y "cuda-minimal-build-${v}" "cuda-driver-devel-${v}" "cuda-nvrtc-devel-${v}" nvidia-driver-cuda-libs',
+              'yum install -y --skip-broken "cuda-minimal-build-${v}" "cuda-driver-devel-${v}" "cuda-nvrtc-devel-${v}" || true'
+            )
+            
+            print("Modified before-all section:")
+            print(new_before_all)
+            
+            # Replace the entire before-all section
+            modified_content = modified_content.replace(
+              f'before-all = """\n{original_before_all}\n"""',
+              f'before-all = """\n{new_before_all}\n"""'
+            )
+          
           with open('tilelang-source/pyproject.toml', 'w') as f:
-              f.write(modified_content)
-          "
+            f.write(modified_content)
+
+      - name: Print pyproject
+        run: |
           echo "====================================================="
           echo "Contents of pyproject.toml after replacement:"
           cat tilelang-source/pyproject.toml
           echo "====================================================="
-          
+
+      - name: Set CIBW_BUILD
+        run: |
+
           PYTHON_VERSION="${{ matrix.python-version }}"
           PYTHON_VERSION_MAJMIN="$(echo "${PYTHON_VERSION}" | cut -d '.' -f-2)"
           PYTHON_VERSION_MAJMIN_NODOT="${PYTHON_VERSION_MAJMIN//./}"
@@ -108,15 +139,15 @@ jobs:
             CUDA_VERSION="${CUDA_VERSION#CUDA-}"
             echo "CUDA_VERSION=${CUDA_VERSION}" | tee -a "${GITHUB_ENV}"
             # Add environment variables to handle CUDA installation issues
-            echo "CIBW_ENVIRONMENT_LINUX=CUDA_VERSION=${CUDA_VERSION} CUDACXX=/usr/local/cuda/bin/nvcc LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" | tee -a "${GITHUB_ENV}"
+            echo "CIBW_ENVIRONMENT_LINUX=CUDA_VERSION=${CUDA_VERSION} CUDACXX=/usr/local/cuda/bin/nvcc LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH SKIP_NVIDIA_DRIVER_LIBS=1" | tee -a "${GITHUB_ENV}"
           fi
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             HOST_CCACHE_DIR="$(ccache --get-config cache_dir)"
             echo "CIBW_BEFORE_BUILD_LINUX=yum install -y ccache && ccache -o cache_dir=/host${HOST_CCACHE_DIR}" | tee -a "${GITHUB_ENV}"
             # Add environment variable to skip broken packages during CUDA installation
             echo "CIBW_BEFORE_BUILD_LINUX=${CIBW_BEFORE_BUILD_LINUX} && export CUDACXX=/usr/local/cuda/bin/nvcc" | tee -a "${GITHUB_ENV}"
-            # Add error handling for CUDA installation
-            echo "CIBW_BEFORE_BUILD_LINUX=${CIBW_BEFORE_BUILD_LINUX} && (yum install -y --skip-broken nvidia-driver-cuda-libs || true)" | tee -a "${GITHUB_ENV}"
+            # Skip nvidia-driver-cuda-libs installation to avoid GLIBC version conflicts
+            echo "CIBW_BEFORE_BUILD_LINUX=${CIBW_BEFORE_BUILD_LINUX} && echo 'Skipping nvidia-driver-cuda-libs installation to avoid GLIBC conflicts'" | tee -a "${GITHUB_ENV}"
           fi
           # Set working directory for cibuildwheel
           echo "CIBW_BUILD_FRONTEND=build" | tee -a "${GITHUB_ENV}"
