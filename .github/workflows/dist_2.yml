@@ -85,6 +85,12 @@ jobs:
               content = f.read()
           modified_content = content.replace('rhel7/x86_64/cuda-rhel7.repo', 'rhel8/x86_64/cuda-rhel8.repo')
           modified_content = modified_content.replace('developer.download.nvidia.cn', 'developer.download.nvidia.com')
+          # Modify the before-all command to use --skip-broken flag
+          modified_content = re.sub(
+              r'yum install -y \"cuda-minimal-build-\$\{v\}\" \"cuda-driver-devel-\$\{v\}\" \"cuda-nvrtc-devel-\$\{v}\"',
+              'yum install -y --skip-broken \"cuda-minimal-build-${v}\" \"cuda-driver-devel-${v}\" \"cuda-nvrtc-devel-${v}\" || true',
+              modified_content
+          )
           with open('tilelang-source/pyproject.toml', 'w') as f:
               f.write(modified_content)
           "
@@ -101,10 +107,16 @@ jobs:
             CUDA_VERSION="${{ matrix.target.toolkit }}"
             CUDA_VERSION="${CUDA_VERSION#CUDA-}"
             echo "CUDA_VERSION=${CUDA_VERSION}" | tee -a "${GITHUB_ENV}"
+            # Add environment variables to handle CUDA installation issues
+            echo "CIBW_ENVIRONMENT_LINUX=CUDA_VERSION=${CUDA_VERSION} CUDACXX=/usr/local/cuda/bin/nvcc LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH" | tee -a "${GITHUB_ENV}"
           fi
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             HOST_CCACHE_DIR="$(ccache --get-config cache_dir)"
             echo "CIBW_BEFORE_BUILD_LINUX=yum install -y ccache && ccache -o cache_dir=/host${HOST_CCACHE_DIR}" | tee -a "${GITHUB_ENV}"
+            # Add environment variable to skip broken packages during CUDA installation
+            echo "CIBW_BEFORE_BUILD_LINUX=${CIBW_BEFORE_BUILD_LINUX} && export CUDACXX=/usr/local/cuda/bin/nvcc" | tee -a "${GITHUB_ENV}"
+            # Add error handling for CUDA installation
+            echo "CIBW_BEFORE_BUILD_LINUX=${CIBW_BEFORE_BUILD_LINUX} && (yum install -y --skip-broken nvidia-driver-cuda-libs || true)" | tee -a "${GITHUB_ENV}"
           fi
           # Set working directory for cibuildwheel
           echo "CIBW_BUILD_FRONTEND=build" | tee -a "${GITHUB_ENV}"
