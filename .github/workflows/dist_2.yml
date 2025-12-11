@@ -54,7 +54,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: ${{ inputs.repository }}
           fetch-depth: 1
@@ -149,7 +149,7 @@ jobs:
           echo "CIBW_BUILD_FRONTEND=build" | tee -a "${GITHUB_ENV}"
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2
+        uses: pypa/cibuildwheel@v3.3
         with:
           package-dir: tilelang-source
           output-dir: wheelhouse
