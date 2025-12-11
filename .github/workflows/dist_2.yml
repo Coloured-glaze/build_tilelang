@@ -61,6 +61,17 @@ jobs:
           submodules: recursive
           path: tilelang-source
 
+          
+      - name: Free Disk Space (Linux only)
+        if: runner.os == 'Linux'
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          echo "Free disk space after removing large packages:"
+          df -h
+          
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
