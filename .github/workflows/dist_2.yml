@@ -18,6 +18,16 @@ on:
         required: false
         type: string
         default: 'tile-ai/tilelang'
+      release:
+        description: 'Create release (1=yes, 0=no)'
+        default: '0'
+        required: true
+        type: string
+      version:
+        description: 'Version type: commit, tag, version, or custom value'
+        default: 'commit'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -61,16 +71,46 @@ jobs:
           submodules: recursive
           path: tilelang-source
 
-          
+      - name: Determine Version
+        id: determine_version
+        run: |
+          cd tilelang-source
+          INPUT_VERSION="${{ inputs.version }}"
+          case "$INPUT_VERSION" in
+            commit)
+              version="$(git rev-parse --short HEAD)"
+              ;;
+            tag)
+              version="git-$(git describe --tags --abbrev=0)"
+              ;;
+            version)
+              if [ -f VERSION ]; then
+                version=$(cat VERSION)
+              else
+                version="$INPUT_VERSION"
+              fi
+              ;;
+            *)
+              version="$INPUT_VERSION"
+              ;;
+          esac
+          echo "d_ver=$version" >> "$GITHUB_OUTPUT"
+
       - name: Free Disk Space (Linux only)
         if: runner.os == 'Linux'
         run: |
           df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/share/dotnet 2>/dev/null
+          sudo rm -rf /opt/ghc 2>/dev/null
+          sudo rm -rf /opt/hostedtoolcache/CodeQL 2>/dev/null
           echo "Free disk space after removing large packages:"
           df -h
+
+      - name: Free up disk space
+        if: runner.os == 'Linux'
+        uses: ggml-org/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
           
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1
@@ -195,3 +235,12 @@ jobs:
           name: wheel-artifacts
           path: dist/*.whl
           if-no-files-found: error
+      
+      - name: Create Release
+        if: ${{ inputs.release == '1' }}
+        uses: softprops/action-gh-release@v2.3.3
+        with:
+          tag_name: ${{ steps.determine_version.outputs.d_ver }}-py${{ matrix.python-version }}-cu${{ inputs.cuda_version }}-${{ inputs.os_version }}
+          files: dist/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
